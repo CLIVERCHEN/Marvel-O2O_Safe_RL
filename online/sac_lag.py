@@ -81,12 +81,7 @@ class SAC_Lag(object):
         else:
             self.cost_critic = EnsembleQCritic(state_dim, action_dim, [256, 256], nn.ReLU, num_q=1, use_mlp_modify=True).to(
                 self.device)
-        # if args.env == "OfflineDroneCircle-v0":
-        #     self.cost_critic = EnsembleQCritic(state_dim, action_dim, [256, 256, 256], nn.ReLU, num_q=1).to(
-        #     self.device)
-        # else:
-        #     self.cost_critic = EnsembleQCritic(state_dim, action_dim, [256, 256], nn.ReLU, num_q=1).to(
-        #         self.device)
+
         self.cost_critic_target = copy.deepcopy(self.cost_critic)
         self.cost_critic_optimizer = torch.optim.Adam(self.cost_critic.parameters(), lr=cost_critic_lr)
 
@@ -200,10 +195,6 @@ class SAC_Lag(object):
 
                 # Compute the entropy
                 entropy = torch.mean(next_log_pi)
-                # entropy = 0
-
-                # print("next_log_pi:", next_log_pi)
-                # print("entropy:", entropy)
 
                 # Compute the target Q value
                 target_Q, _ = self.critic_target.predict(mini_next_state, next_action)
@@ -227,7 +218,7 @@ class SAC_Lag(object):
             # Optimize the critic
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
-            #torch.nn.utils.clip_grad_norm_(self.critic.parameters(), max_norm=self.max_grad_norm)
+
             self.critic_optimizer.step()
 
             # Get current cost estimates
@@ -243,7 +234,7 @@ class SAC_Lag(object):
             # Optimize the cost critic
             self.cost_critic_optimizer.zero_grad()
             cost_critic_loss.backward()
-            #torch.nn.utils.clip_grad_norm_(self.cost_critic.parameters(), max_norm=self.max_grad_norm)
+
             self.cost_critic_optimizer.step()
 
             # Update the Lagrange multiplier
@@ -260,8 +251,7 @@ class SAC_Lag(object):
             pi_action, logp_pi, mu, log_std = self.actor(mini_state, with_logprob=True, with_mean_std=True)
             std = log_std.exp()
             entropy = -torch.mean(logp_pi)
-            # print("log_pi:", logp_pi)
-            # print("entropy:", entropy)
+
             q_pi, _ = self.critic_target.predict(mini_state, pi_action)
             qc_pi, _ = self.cost_critic_target.predict(mini_state, pi_action)
 
@@ -284,7 +274,7 @@ class SAC_Lag(object):
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
-            #torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.max_grad_norm)
+
             self.actor_optimizer.step()
 
             # Update the frozen target models
@@ -313,7 +303,7 @@ class SAC_Lag(object):
             return np.mean(Q), np.mean(Qc)
 
 
-    def ope(self, replay_buffer, if_critic=True, if_cost_critic=True, batch_size=256):
+    def vpa(self, replay_buffer, if_critic=True, if_cost_critic=True, batch_size=256):
         state, action, next_state, reward, not_done, cost = replay_buffer.sample(batch_size)
         dataset = TensorDataset(
             state.to(self.device),
@@ -377,7 +367,7 @@ class SAC_Lag(object):
                     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
 
-    def ope_entropy(self, replay_buffer, if_critic=True, if_cost_critic=True, batch_size=256):
+    def vpa_entropy(self, replay_buffer, if_critic=True, if_cost_critic=True, batch_size=256):
         state, action, next_state, reward, not_done, cost = replay_buffer.sample(batch_size)
         dataset = TensorDataset(
             state.to(self.device),
@@ -441,14 +431,3 @@ class SAC_Lag(object):
             if if_cost_critic:
                 for param, target_param in zip(self.cost_critic.parameters(), self.cost_critic_target.parameters()):
                     target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-    def expectile_loss(self, target, q_list, expectile):
-        total_loss = torch.tensor(0.0).to(self.device)
-        expectile = torch.tensor(expectile).to(self.device)
-        for q in q_list:
-            diff = (q - target).to(self.device)
-            weight = torch.where(diff > 0, torch.tensor(expectile), torch.tensor(1.0 - expectile))
-            weighted_loss = (weight * (diff ** 2)).mean()
-            total_loss += weighted_loss
-        return total_loss
-
